@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ember Drift</title>
+<style>
+:root{--bg:#1e6b3a;--ink:#fff3e6;--hot:#2fb85a;--amber:#ffb347;--teal:#3ff2d0;--panel:rgba(8,40,22,.72);color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1e6b3a;--ink:#fff3e6}}
+:root[data-theme="dark"]{--bg:#1e6b3a;--ink:#fff3e6}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);overflow:hidden;font-family:'Chakra Petch',system-ui,-apple-system,'Segoe UI',sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+#app{position:absolute;inset:0;overflow:hidden}
+canvas{width:100%;height:100%;display:block}
+#hud{position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:flex-start;padding:12px 14px;pointer-events:none}
+#hud b{font-size:clamp(28px,7vw,44px);font-weight:700;letter-spacing:.5px;text-shadow:0 2px 14px rgba(0,40,10,.8)}
+#hud span{opacity:.75;margin-left:4px}
+#pips{display:flex;gap:8px;margin-top:10px}
+#pips i{width:26px;height:8px;border-radius:4px;background:var(--teal);box-shadow:0 0 12px var(--teal);transition:.2s}
+#pips i.off{background:#3a2a55;box-shadow:none}
+.r{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+button{font:inherit;color:var(--ink);cursor:pointer}
+#pause{pointer-events:auto;background:var(--panel);border:1px solid rgba(255,255,255,.25);border-radius:10px;padding:8px 14px}
+#bot{position:absolute;left:14px;right:14px;bottom:14px;display:flex;gap:12px;align-items:center}
+#meter{flex:1;height:12px;border-radius:6px;background:rgba(255,255,255,.14);overflow:hidden}
+#fill{height:100%;width:0;background:linear-gradient(90deg,var(--hot),var(--amber));transition:width .1s}
+#bot button{min-width:60px;height:56px;border-radius:28px;border:2px solid var(--amber);background:var(--panel);font-weight:700;font-size:16px;touch-action:none;padding:0 10px}
+#rk,#tr{border-color:var(--teal)}
+#boost.on{background:var(--amber);color:#2a1050;box-shadow:0 0 28px var(--amber)}
+#fps{position:absolute;left:14px;bottom:80px;font-size:12px;opacity:.55;pointer-events:none}
+#ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px;background:radial-gradient(ellipse at 50% 40%,rgba(120,220,120,.25),rgba(8,40,22,.92) 70%)}
+#ov h1{margin:0;font-size:clamp(44px,12vw,92px);line-height:1;font-weight:700;letter-spacing:1px;background:linear-gradient(180deg,#f6ffb0,#7be36a);-webkit-background-clip:text;background-clip:text;color:transparent}
+#ov p{margin:0;max-width:44ch;line-height:1.5;opacity:.88}
+.how{display:grid;gap:9px;text-align:left;font-size:15px;line-height:1.4}
+#go{background:var(--hot);border:0;border-radius:14px;padding:14px 34px;font-size:19px;font-weight:700;box-shadow:0 0 30px rgba(60,220,110,.5)}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="c"></canvas>
+  <div id="hud">
+    <div><div><b id="dist">0</b><span>m</span></div><div id="pips"><i></i><i></i><i></i></div></div>
+    <div class="r"><div>Best <b id="best" style="font-size:18px">0</b><span>m</span></div><button id="pause">Pause</button></div>
+  </div>
+  <div id="fps"></div>
+  <div id="bot"><div id="meter"><div id="fill"></div></div><button id="rk">🚀 <span id="nr">6</span></button><button id="tr">🌳 <span id="nt">2</span></button><button id="boost">Nitro</button></div>
+  <div id="ov"><h1 id="t">Ember Drift</h1><p id="d"></p><button id="go">Start driving</button></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(()=>{
+const $=id=>document.getElementById(id), app=$('app');
+const R=new THREE.WebGLRenderer({canvas:$('c'),antialias:true,powerPreference:'high-performance'});
+R.setPixelRatio(Math.min(devicePixelRatio||1,2));
+const scene=new THREE.Scene(); scene.fog=new THREE.Fog(0xa5dc86,60,300);
+const cam=new THREE.PerspectiveCamera(68,1,.1,700);
+function resize(){const w=app.clientWidth,h=app.clientHeight;R.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix();}
+addEventListener('resize',resize);resize();
+
+/* sky + sun */
+const sky=new THREE.Mesh(new THREE.SphereGeometry(400,24,16),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,
+ vertexShader:'varying vec3 p;void main(){p=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+ fragmentShader:'varying vec3 p;void main(){float h=normalize(p).y;vec3 a=vec3(.78,.93,.58),b=vec3(.35,.78,.45),c=vec3(.06,.4,.3);vec3 col=mix(a,b,smoothstep(0.,.16,h));col=mix(col,c,smoothstep(.1,.65,h));gl_FragColor=vec4(col,1.);}'}));
+sky.renderOrder=-2;scene.add(sky);
+function glow(){const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d'),r=g.createRadialGradient(32,32,0,32,32,32);r.addColorStop(0,'rgba(255,255,255,1)');r.addColorStop(.3,'rgba(255,255,255,.5)');r.addColorStop(1,'rgba(255,255,255,0)');g.fillStyle=r;g.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);}
+const GT=glow();
+const sun=new THREE.Sprite(new THREE.SpriteMaterial({map:GT,color:0xfff2a8,fog:false,depthWrite:false,blending:THREE.AdditiveBlending}));
+sun.scale.set(280,280,1);sun.renderOrder=-1;scene.add(sun);
+
+/* lights */
+scene.add(new THREE.HemisphereLight(0xdfffd0,0x2a5a2a,1));
+const d1=new THREE.DirectionalLight(0xfff0c0,1);d1.position.set(0,30,-100);scene.add(d1);
+const d2=new THREE.DirectionalLight(0x90d0ff,.7);d2.position.set(10,20,50);scene.add(d2);
+
+/* ground */
+const gc=document.createElement('canvas');gc.width=gc.height=128;
+{const g=gc.getContext('2d');g.fillStyle='#2f8f3a';g.fillRect(0,0,128,128);g.fillStyle='#3aa447';g.fillRect(0,0,128,64);g.strokeStyle='#4fbf55';g.lineWidth=2;g.strokeRect(0,0,128,128);}
+const gt=new THREE.CanvasTexture(gc);gt.wrapS=gt.wrapT=THREE.RepeatWrapping;gt.anisotropy=8;gt.repeat.set(160/12,520/12);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(160,520),new THREE.MeshBasicMaterial({map:gt}));
+ground.rotation.x=-Math.PI/2;ground.position.z=-220;scene.add(ground);
+const pc2=document.createElement('canvas');pc2.width=64;pc2.height=128;{const g=pc2.getContext('2d');g.fillStyle='#7a6a52';g.fillRect(0,0,64,128);g.fillStyle='#8c7b62';g.fillRect(0,64,64,64);g.fillStyle='#f2ecd0';g.fillRect(30,0,4,60);}
+const pt=new THREE.CanvasTexture(pc2);pt.wrapS=pt.wrapT=THREE.RepeatWrapping;pt.repeat.set(1,520/24);
+const path=new THREE.Mesh(new THREE.PlaneGeometry(35.6,520),new THREE.MeshBasicMaterial({map:pt}));path.rotation.x=-Math.PI/2;path.position.set(0,.08,-220);scene.add(path);
+for(const x of[-18,18]){const e=new THREE.Mesh(new THREE.BoxGeometry(.4,.1,520),new THREE.MeshBasicMaterial({color:0xf2ecd0}));e.position.set(x,.05,-220);scene.add(e);}
+
+/* hedge walls */
+const walls=[];const SPAN=360,N=18;
+function wallShape(m,side){const w=8+Math.random()*9,h=6+Math.random()*16,d=10+Math.random()*10;
+ m.scale.set(w,h,d);m.position.x=side*(26+w/2+Math.random()*6);m.position.y=h/2-2;m.material.color.setHSL(.3+Math.random()*.06,.5,.16+Math.random()*.1);}
+for(const side of [-1,1])for(let i=0;i<N;i++){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshLambertMaterial({flatShading:true}));
+ wallShape(m,side);m.position.z=30-i*(SPAN/N);m.userData.side=side;scene.add(m);walls.push(m);}
+
+/* car */
+const ship=new THREE.Group();
+const bodyM=new THREE.MeshStandardMaterial({color:0xfff0e0,metalness:.3,roughness:.35,emissive:0x301020});
+const wingM=new THREE.MeshStandardMaterial({color:0xff3d81,metalness:.2,roughness:.4,emissive:0x501030,flatShading:true});
+const glassM=new THREE.MeshStandardMaterial({color:0x1a0a30,metalness:.8,roughness:.1}),wheelM=new THREE.MeshLambertMaterial({color:0x120818}),lampM=new THREE.MeshBasicMaterial({color:0xfff2b0}),tailM=new THREE.MeshBasicMaterial({color:0xff2040});
+const chassis=new THREE.Mesh(new THREE.BoxGeometry(2.2,.55,4.4),wingM);chassis.position.y=.2;ship.add(chassis);
+const cab=new THREE.Mesh(new THREE.BoxGeometry(1.7,.5,2),glassM);cab.position.set(0,.7,.3);ship.add(cab);
+const hood=new THREE.Mesh(new THREE.BoxGeometry(2,.2,1.6),bodyM);hood.position.set(0,.5,-1.3);ship.add(hood);
+const spoil=new THREE.Mesh(new THREE.BoxGeometry(2.3,.1,.5),bodyM);spoil.position.set(0,.95,1.95);ship.add(spoil);
+const wheels=[];for(const [x,z] of [[-1.15,-1.4],[1.15,-1.4],[-1.15,1.4],[1.15,1.4]]){const w=new THREE.Mesh(new THREE.CylinderGeometry(.46,.46,.35,14),wheelM);w.rotation.z=Math.PI/2;w.position.set(x,-.05,z);ship.add(w);wheels.push(w);}
+for(const x of[-.75,.75]){const a=new THREE.Mesh(new THREE.BoxGeometry(.4,.15,.1),lampM);a.position.set(x,.3,-2.22);ship.add(a);const b=new THREE.Mesh(new THREE.BoxGeometry(.5,.12,.1),tailM);b.position.set(x,.35,2.22);ship.add(b);}
+const ug=new THREE.Sprite(new THREE.SpriteMaterial({map:GT,color:0x3ff2d0,blending:THREE.AdditiveBlending,depthWrite:false}));ug.scale.set(5,5,1);ug.position.y=-.35;ship.add(ug);ship.position.y=.55;
+const eng=new THREE.Sprite(new THREE.SpriteMaterial({map:GT,color:0xffb347,blending:THREE.AdditiveBlending,depthWrite:false}));
+eng.scale.set(2.6,2.6,1);eng.position.set(0,.4,2.7);ship.add(eng);scene.add(ship);
+
+/* trail */
+const TN=90,tp=new Float32Array(TN*3),tc=new Float32Array(TN*3)
