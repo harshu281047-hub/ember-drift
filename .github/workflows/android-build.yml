@@ -8,7 +8,8 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 18
+      - run: mkdir www && cp index.html www/
       - run: npm install @capacitor/core @capacitor/cli @capacitor/android
-      - run: npx cap init "Ember Drift" "com.harshil.emberdrift" --web-dir=.
+      - run: npx cap init "Ember Drift" "com.harshil.emberdrift" --web-dir=www
       - run: npx cap add android
       - run: npx cap build android
