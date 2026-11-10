@@ -1,0 +1,6 @@
+{
+  "appId": "com.harshil.emberdrift",
+  "appName": "Ember Drift",
+  "webDir": ".",
+  "bundledWebRuntime": false
+}
